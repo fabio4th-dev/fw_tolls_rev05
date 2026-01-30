@@ -3384,7 +3384,38 @@ body.dark-mode #colaboradoresSyncButtons .btn:hover {
                         </span>
                     </div>
                 </div>
-                
+<!-- BOTÕES DE SINCRONIZAÇÃO COM NUVEM -->
+<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+    <h4 style="color: var(--primary-color) !important; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+        <i class="fas fa-cloud"></i> Sincronizar com a Nuvem
+    </h4>
+    
+    <div style="background-color: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid var(--warning-color);">
+        <p style="margin: 0; color: var(--text-color) !important; font-size: 13px;">
+            <i class="fas fa-info-circle"></i> 
+            <strong>Atribuições Locais:</strong> <span id="localAtribuicoesCount">0</span> | 
+            <strong>Status:</strong> <span id="atribuicoesCloudStatus">Desconectado</span>
+        </p>
+    </div>
+    
+    <div class="btn-group" style="justify-content: center; flex-wrap: wrap; gap: 8px;">
+        <button type="button" class="btn btn-sm btn-success" id="enviarAtribuicoesBtn">
+            <i class="fas fa-cloud-upload-alt"></i> Enviar para Nuvem
+        </button>
+        
+        <button type="button" class="btn btn-sm btn-primary" id="buscarAtribuicoesBtn">
+            <i class="fas fa-cloud-download-alt"></i> Buscar da Nuvem
+        </button>
+        
+        <button type="button" class="btn btn-sm btn-warning" id="sincronizarTudoAtribBtn">
+            <i class="fas fa-sync-alt"></i> Sincronizar Tudo
+        </button>
+    </div>
+    
+    <div id="atribuicoesSyncStatus" style="margin-top: 10px; padding: 8px; border-radius: 6px; display: none; font-size: 12px;">
+        <!-- Status será mostrado aqui -->
+    </div>
+</div>                
                 <div class="form-group">
                     <label for="ferramentaParaAtribuir" style="color: var(--text-color) !important;">
                         Selecionar Ferramenta para Atribuir:
@@ -4147,7 +4178,139 @@ function inicializarGeradorCodigoColaborador() {
         this.style.backgroundColor = '';
     });
 }
+// ===== BOTÕES DE SINCRONIZAÇÃO DE ATRIBUIÇÕES =====
+document.getElementById('enviarAtribuicoesBtn')?.addEventListener('click', async function() {
+    if (!isOnlineMode || !supabaseClient) {
+        showNotification('Não conectado à nuvem.', 'error');
+        return;
+    }
+    
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+    
+    try {
+        const success = await syncAtribuicoesToSupabase();
+        if (success) {
+            showAtribuicoesStatus('success', '✅ Atribuições enviadas para a nuvem!');
+        }
+    } catch (error) {
+        showAtribuicoesStatus('error', `❌ Erro: ${error.message}`);
+    } finally {
+        this.disabled = false;
+        this.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Enviar para Nuvem';
+    }
+});
 
+document.getElementById('buscarAtribuicoesBtn')?.addEventListener('click', async function() {
+    if (!isOnlineMode || !supabaseClient) {
+        showNotification('Não conectado à nuvem.', 'error');
+        return;
+    }
+    
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+    
+    try {
+        const success = await fetchAtribuicoesFromSupabase();
+        if (success) {
+            showAtribuicoesStatus('success', '✅ Atribuições atualizadas da nuvem!');
+        }
+    } catch (error) {
+        showAtribuicoesStatus('error', `❌ Erro: ${error.message}`);
+    } finally {
+        this.disabled = false;
+        this.innerHTML = '<i class="fas fa-cloud-download-alt"></i> Buscar da Nuvem';
+    }
+});
+
+document.getElementById('sincronizarTudoAtribBtn')?.addEventListener('click', async function() {
+    if (!isOnlineMode || !supabaseClient) {
+        showNotification('Não conectado à nuvem.', 'error');
+        return;
+    }
+    
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
+    
+    try {
+        // Primeiro enviar
+        await syncAtribuicoesToSupabase();
+        // Depois buscar atualizações
+        await fetchAtribuicoesFromSupabase();
+        
+        showAtribuicoesStatus('success', '✅ Sincronização completa!');
+    } catch (error) {
+        showAtribuicoesStatus('error', `❌ Erro: ${error.message}`);
+    } finally {
+        this.disabled = false;
+        this.innerHTML = '<i class="fas fa-sync-alt"></i> Sincronizar Tudo';
+    }
+});
+
+// Função para mostrar status
+function showAtribuicoesStatus(type, message) {
+    const statusDiv = document.getElementById('atribuicoesSyncStatus');
+    if (!statusDiv) return;
+    
+    statusDiv.style.display = 'block';
+    statusDiv.className = '';
+    
+    switch(type) {
+        case 'success':
+            statusDiv.style.backgroundColor = 'rgba(39, 174, 96, 0.1)';
+            statusDiv.style.border = '1px solid var(--success-color)';
+            statusDiv.style.color = 'var(--success-color)';
+            break;
+        case 'error':
+            statusDiv.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+            statusDiv.style.border = '1px solid var(--danger-color)';
+            statusDiv.style.color = 'var(--danger-color)';
+            break;
+        case 'info':
+            statusDiv.style.backgroundColor = 'rgba(52, 152, 219, 0.1)';
+            statusDiv.style.border = '1px solid var(--secondary-color)';
+            statusDiv.style.color = 'var(--secondary-color)';
+            break;
+    }
+    
+    statusDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+            ${type === 'success' ? '<i class="fas fa-check-circle"></i>' : 
+              type === 'error' ? '<i class="fas fa-exclamation-circle"></i>' : 
+              '<i class="fas fa-info-circle"></i>'}
+            <span>${message}</span>
+        </div>
+    `;
+    
+    setTimeout(() => {
+        statusDiv.style.display = 'none';
+    }, 5000);
+}
+
+// Atualizar contagem de atribuições locais
+function updateLocalAtribuicoesCount() {
+    const countElement = document.getElementById('localAtribuicoesCount');
+    if (countElement) {
+        const ativas = historicoAtribuicoes.filter(a => !a.dataDevolucao).length;
+        countElement.textContent = `${historicoAtribuicoes.length} (${ativas} ativas)`;
+    }
+    
+    const statusElement = document.getElementById('atribuicoesCloudStatus');
+    if (statusElement) {
+        if (isOnlineMode) {
+            statusElement.textContent = 'Conectado';
+            statusElement.style.color = 'var(--success-color)';
+        } else {
+            statusElement.textContent = 'Desconectado';
+            statusElement.style.color = 'var(--danger-color)';
+        }
+    }
+}
+
+// Chame esta função quando atualizar atribuições
+function updateAtribuicoesUI() {
+    updateLocalAtribuicoesCount();
+}
 // Função para carregar letras disponíveis baseadas nos colaboradores existentes
 function getLetrasDisponiveis() {
     const letrasUsadas = new Set();
@@ -4184,6 +4347,280 @@ function sugerirCodigosDisponiveis() {
     });
     
     return sugestoes;
+}
+// ============================================
+// FUNÇÃO CORRIGIDA: Converter atribuição para formato Supabase
+// ============================================
+
+function convertAtribuicaoToSupabaseFormat(atribuicao) {
+    return {
+        id: atribuicao.id,
+        tool_id: atribuicao.toolId, // Nome do campo ajustado
+        tool_code: atribuicao.toolCodigo,
+        tool_name: atribuicao.toolNome,
+        collaborator_id: atribuicao.colaboradorId,
+        collaborator_registration: atribuicao.colaboradorMatricula,
+        collaborator_name: atribuicao.colaboradorNome,
+        assignment_date: atribuicao.dataAtribuicao,
+        assignment_type: 'collaborator',
+        assigned_to_type: 'colaborador',
+        assigned_to_id: atribuicao.colaboradorId.toString(),
+        assigned_to_name: atribuicao.colaboradorNome,
+        status: atribuicao.dataDevolucao ? 'returned' : 'active',
+        observations: atribuicao.observacao || null,
+        user_assigned: atribuicao.usuarioAtribuicao,
+        user_returned: atribuicao.usuarioDevolucao || null,
+        returned_date: atribuicao.dataDevolucao || null,
+        expected_return_date: null, // Adicione este campo se necessário
+        actual_return_date: atribuicao.dataDevolucao || null,
+        created_at: atribuicao.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+}
+
+// ============================================
+// FUNÇÃO CORRIGIDA: Salvar atribuição no Supabase
+// ============================================
+
+async function saveAtribuicaoToSupabase(atribuicao) {
+    try {
+        if (!supabaseClient || !isOnlineMode) {
+            return false;
+        }
+        
+        const atribuicaoData = convertAtribuicaoToSupabaseFormat(atribuicao);
+        
+        // Verificar se já existe uma atribuição ativa para esta ferramenta
+        const { data: existingActive } = await supabaseClient
+            .from('tool_assignments')
+            .select('id')
+            .eq('tool_code', atribuicao.toolCodigo)
+            .eq('status', 'active')
+            .maybeSingle();
+        
+        if (existingActive) {
+            // Se existe ativa e estamos marcando como devolvida
+            if (atribuicao.dataDevolucao) {
+                const { error } = await supabaseClient
+                    .from('tool_assignments')
+                    .update({
+                        status: 'returned',
+                        user_returned: atribuicao.usuarioDevolucao,
+                        returned_date: atribuicao.dataDevolucao,
+                        actual_return_date: atribuicao.dataDevolucao,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingActive.id);
+                
+                if (error) throw error;
+            } else {
+                // Atualizar atribuição existente
+                const { error } = await supabaseClient
+                    .from('tool_assignments')
+                    .update(atribuicaoData)
+                    .eq('id', existingActive.id);
+                
+                if (error) throw error;
+            }
+        } else if (atribuicao.dataDevolucao) {
+            // Não fazer nada se for apenas devolução sem atribuição ativa
+            return true;
+        } else {
+            // Inserir nova atribuição
+            const { data, error } = await supabaseClient
+                .from('tool_assignments')
+                .insert([atribuicaoData])
+                .select();
+            
+            if (error) throw error;
+            
+            // Atualizar o ID local com o ID gerado pelo Supabase
+            if (data && data[0]) {
+                atribuicao.id = data[0].id;
+            }
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Erro ao salvar atribuição no Supabase:', error);
+        console.error('Detalhes do erro:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+        });
+        
+        // Verificar se é erro de coluna inexistente
+        if (error.message && error.message.includes('column')) {
+            showNotification('Erro: Coluna não existe na tabela do banco de dados.', 'error');
+        } else {
+            showNotification('Erro ao salvar atribuição na nuvem.', 'warning');
+        }
+        
+        return false;
+    }
+}
+// ============================================
+// BUSCAR ATRIBUIÇÕES DO SUPABASE
+// ============================================
+
+async function fetchAtribuicoesFromSupabase() {
+    try {
+        if (!supabaseClient || !isOnlineMode) {
+            return false;
+        }
+        
+        console.log('🔄 Buscando atribuições do Supabase...');
+        
+        const { data, error } = await supabaseClient
+            .from('tool_assignments')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            if (error.message.includes('does not exist')) {
+                console.log('📋 Tabela tool_assignments não existe ainda');
+                return false;
+            }
+            throw error;
+        }
+        
+        if (data && data.length > 0) {
+            console.log(`📥 ${data.length} atribuições recebidas do Supabase`);
+            
+            // Converter para formato local
+            const convertedAtribuicoes = data.map(item => ({
+                id: item.id,
+                colaboradorId: item.collaborator_id,
+                colaboradorNome: item.collaborator_name,
+                colaboradorMatricula: item.collaborator_registration,
+                toolId: item.tool_id,
+                toolNome: item.tool_name,
+                toolCodigo: item.tool_code,
+                dataAtribuicao: item.assignment_date,
+                dataDevolucao: item.returned_date || item.actual_return_date,
+                observacao: item.observations,
+                usuarioAtribuicao: item.user_assigned,
+                usuarioDevolucao: item.user_returned,
+                createdAt: item.created_at,
+                updatedAt: item.updated_at,
+                status: item.status
+            }));
+            
+            // Mesclar com atribuições locais
+            await processMergeAtribuicoes(convertedAtribuicoes);
+            
+            return true;
+        } else {
+            console.log('📭 Nenhuma atribuição encontrada na nuvem');
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Erro ao buscar atribuições do Supabase:', error);
+        showNotification(`Erro ao buscar atribuições: ${error.message}`, 'error');
+        return false;
+    }
+}
+// ============================================
+// PROCESSAR MESCLAGEM DE ATRIBUIÇÕES
+// ============================================
+
+async function processMergeAtribuicoes(cloudAtribuicoes) {
+    try {
+        // Criar mapa das atribuições da nuvem
+        const cloudMap = new Map();
+        cloudAtribuicoes.forEach(atribuicao => {
+            // Usar chave composta para identificar unicamente
+            const key = `${atribuicao.toolCodigo}_${atribuicao.colaboradorMatricula}_${atribuicao.dataAtribuicao}`;
+            cloudMap.set(key, atribuicao);
+        });
+        
+        let updatedCount = 0;
+        let addedCount = 0;
+        
+        // Atualizar atribuições existentes
+        historicoAtribuicoes.forEach((localAtribuicao, index) => {
+            const key = `${localAtribuicao.toolCodigo}_${localAtribuicao.colaboradorMatricula}_${localAtribuicao.dataAtribuicao}`;
+            const cloudAtribuicao = cloudMap.get(key);
+            
+            if (cloudAtribuicao) {
+                // Mesclar dados, mantendo prioridade da nuvem para campos conflitantes
+                historicoAtribuicoes[index] = {
+                    ...localAtribuicao,
+                    ...cloudAtribuicao,
+                    id: cloudAtribuicao.id // Usar ID da nuvem
+                };
+                updatedCount++;
+                cloudMap.delete(key);
+            }
+        });
+        
+        // Adicionar novas atribuições da nuvem
+        const newAtribuicoes = Array.from(cloudMap.values());
+        if (newAtribuicoes.length > 0) {
+            historicoAtribuicoes = [...historicoAtribuicoes, ...newAtribuicoes];
+            addedCount = newAtribuicoes.length;
+        }
+        
+        // Salvar localmente
+        await saveColaboradores(); // Esta função salva também o historicoAtribuicoes
+        
+        // Atualizar interface
+        updateColaboradoresList();
+        
+        // Feedback
+        if (updatedCount > 0 || addedCount > 0) {
+            showNotification(`${updatedCount} atribuições atualizadas, ${addedCount} novas da nuvem!`, 'success');
+            console.log(`✅ ${updatedCount} atualizadas, ${addedCount} novas atribuições`);
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao processar mesclagem de atribuições:', error);
+        throw error;
+    }
+}
+// Sincronizar todas as atribuições ativas para o Supabase
+async function syncAtribuicoesToSupabase() {
+    try {
+        if (!supabaseClient || !isOnlineMode) {
+            showNotification('Não conectado à nuvem.', 'warning');
+            return;
+        }
+        
+        // Filtrar apenas atribuições ativas (não devolvidas)
+        const atribuicoesAtivas = historicoAtribuicoes.filter(atribuicao => !atribuicao.dataDevolucao);
+        
+        if (atribuicoesAtivas.length === 0) {
+            showNotification('Nenhuma atribuição ativa para sincronizar.', 'info');
+            return;
+        }
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const atribuicao of atribuicoesAtivas) {
+            try {
+                const result = await saveAtribuicaoToSupabase(atribuicao);
+                if (result) successCount++;
+                else errorCount++;
+            } catch (error) {
+                errorCount++;
+                console.error(`Erro ao sincronizar atribuição ${atribuicao.id}:`, error);
+            }
+        }
+        
+        if (errorCount === 0) {
+            showNotification(`${successCount} atribuições sincronizadas com sucesso!`, 'success');
+        } else {
+            showNotification(`${successCount} sucessos, ${errorCount} erros na sincronização de atribuições.`, 'warning');
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Erro na sincronização de atribuições:', error);
+        showNotification('Erro na sincronização de atribuições.', 'error');
+        return false;
+    }
 }
 
 // ============================================
@@ -4475,7 +4912,7 @@ async function initializeSystem() {
                     console.error('❌ Erro na sincronização automática:', syncError);
                     showNotification('Erro na sincronização automática da nuvem.', 'warning');
                 }
-            }, 1500); // Delay de 1.5 segundos para não sobrecarregar
+            }, 1000); // Delay de 1.0 segundos para não sobrecarregar
             
         } else {
             console.log('⚠️ Modo local ativo');
@@ -4496,7 +4933,168 @@ async function initializeSystem() {
         showNotification('Erro ao inicializar.', 'error');
     }
 }
+// ============================================
+// ADICIONAR BOTÕES DE SINCRONIZAÇÃO DE ATRIBUIÇÕES
+// ============================================
 
+function addAtribuicoesSyncButtons() {
+    // Encontrar área apropriada (aba de colaboradores ou configuração)
+    const colaboradoresCard = document.querySelector('#controle-colaborador .cards-container .card:nth-child(2)');
+    
+    if (colaboradoresCard && !document.getElementById('atribuicoesSyncButtons')) {
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.id = 'atribuicoesSyncButtons';
+        buttonsContainer.style.cssText = `
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        `;
+        
+        buttonsContainer.innerHTML = `
+            <h5 style="color: var(--primary-color) !important; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-sync-alt"></i> Sincronizar Atribuições
+            </h5>
+            
+            <div class="btn-group" style="justify-content: center; flex-wrap: wrap; gap: 8px;">
+                <button type="button" class="btn btn-sm btn-success" id="syncAtribuicoesToCloudBtn">
+                    <i class="fas fa-cloud-upload-alt"></i> Enviar para Nuvem
+                </button>
+                
+                <button type="button" class="btn btn-sm btn-primary" id="syncAtribuicoesFromCloudBtn">
+                    <i class="fas fa-cloud-download-alt"></i> Buscar da Nuvem
+                </button>
+                
+                <button type="button" class="btn btn-sm btn-info" id="checkAtribuicoesStatusBtn">
+                    <i class="fas fa-chart-bar"></i> Estatísticas
+                </button>
+            </div>
+            
+            <div id="atribuicoesSyncStatus" style="margin-top: 10px; padding: 8px; border-radius: 6px; display: none; font-size: 12px;">
+            </div>
+        `;
+        
+        // Adicionar ao card
+        colaboradoresCard.appendChild(buttonsContainer);
+        
+        // Adicionar event listeners
+        addAtribuicoesSyncEventListeners();
+    }
+}
+
+function addAtribuicoesSyncEventListeners() {
+    // Botão: Enviar para Nuvem
+    document.getElementById('syncAtribuicoesToCloudBtn')?.addEventListener('click', async function() {
+        if (!isOnlineMode || !supabaseClient) {
+            showNotification('Não conectado à nuvem.', 'error');
+            return;
+        }
+        
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+        
+        try {
+            const success = await syncAtribuicoesToSupabase();
+            if (success) {
+                showSyncAtribuicoesStatus('success', '✅ Atribuições enviadas para a nuvem!');
+            }
+        } catch (error) {
+            showSyncAtribuicoesStatus('error', `❌ Erro: ${error.message}`);
+        } finally {
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Enviar para Nuvem';
+        }
+    });
+    
+    // Botão: Buscar da Nuvem
+    document.getElementById('syncAtribuicoesFromCloudBtn')?.addEventListener('click', async function() {
+        if (!isOnlineMode || !supabaseClient) {
+            showNotification('Não conectado à nuvem.', 'error');
+            return;
+        }
+        
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+        
+        try {
+            const success = await fetchAtribuicoesFromSupabase();
+            if (success) {
+                showSyncAtribuicoesStatus('success', '✅ Atribuições atualizadas da nuvem!');
+            }
+        } catch (error) {
+            showSyncAtribuicoesStatus('error', `❌ Erro: ${error.message}`);
+        } finally {
+            this.disabled = false;
+            this.innerHTML = '<i class="fas fa-cloud-download-alt"></i> Buscar da Nuvem';
+        }
+    });
+    
+    // Botão: Estatísticas
+    document.getElementById('checkAtribuicoesStatusBtn')?.addEventListener('click', function() {
+        checkAtribuicoesStatus();
+    });
+}
+
+function showSyncAtribuicoesStatus(type, message) {
+    const statusDiv = document.getElementById('atribuicoesSyncStatus');
+    if (!statusDiv) return;
+    
+    statusDiv.style.display = 'block';
+    statusDiv.className = '';
+    
+    switch(type) {
+        case 'success':
+            statusDiv.style.backgroundColor = 'rgba(39, 174, 96, 0.1)';
+            statusDiv.style.border = '1px solid var(--success-color)';
+            statusDiv.style.color = 'var(--success-color)';
+            break;
+        case 'error':
+            statusDiv.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+            statusDiv.style.border = '1px solid var(--danger-color)';
+            statusDiv.style.color = 'var(--danger-color)';
+            break;
+        case 'info':
+            statusDiv.style.backgroundColor = 'rgba(52, 152, 219, 0.1)';
+            statusDiv.style.border = '1px solid var(--secondary-color)';
+            statusDiv.style.color = 'var(--secondary-color)';
+            break;
+    }
+    
+    statusDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+            ${type === 'success' ? '<i class="fas fa-check-circle"></i>' : 
+              type === 'error' ? '<i class="fas fa-exclamation-circle"></i>' : 
+              '<i class="fas fa-info-circle"></i>'}
+            <span>${message}</span>
+        </div>
+    `;
+    
+    setTimeout(() => {
+        statusDiv.style.display = 'none';
+    }, 5000);
+}
+
+async function checkAtribuicoesStatus() {
+    if (!isOnlineMode || !supabaseClient) {
+        showNotification('Não conectado à nuvem.', 'error');
+        return;
+    }
+    
+    try {
+        const { count: cloudCount } = await supabaseClient
+            .from('tool_assignments')
+            .select('*', { count: 'exact', head: true });
+        
+        const localCount = historicoAtribuicoes.length;
+        const localAtivas = historicoAtribuicoes.filter(a => !a.dataDevolucao).length;
+        
+        showSyncAtribuicoesStatus('info', 
+            `Local: ${localCount} (${localAtivas} ativas) | Nuvem: ${cloudCount || 0}`
+        );
+        
+    } catch (error) {
+        showSyncAtribuicoesStatus('error', `❌ Erro ao verificar: ${error.message}`);
+    }
+}
 // Função para atualizar contagem de colaboradores na UI
 function updateColaboradoresCountUI() {
     const colaboradoresCountElement = document.getElementById('colaboradoresCount');
@@ -6670,7 +7268,7 @@ toolsData.forEach((tool, index) => {
         updateAtribuicaoUI();
         loadToolsList(currentStatusFilter); // Atualiza lista de ferramentas
         loadFerramentasDisponiveis(); // Atualiza lista de disponíveis
-        
+        updateLocalAtribuicoesCount(); // ADICIONE ESTA LINHA
         // Fechar modal se estiver aberto
         document.getElementById('ferramentasColaboradorModal').style.display = 'none';
         
@@ -6846,6 +7444,7 @@ toolsData.forEach((tool, index) => {
         updateColaboradoresList();
         updateAtribuicaoUI();
         loadToolsList(currentStatusFilter);
+        updateLocalAtribuicoesCount(); // ADICIONE ESTA LINHA
         
         // Limpar formulário de atribuição
         document.getElementById('ferramentaParaAtribuir').value = '';
@@ -7843,6 +8442,7 @@ toolsData.forEach((tool, index) => {
                 updateStatistics();
                 loadToolsList();
                 updateColaboradoresList();
+                updateLocalAtribuicoesCount(); // ADICIONE ESTA LINHA
                  // 5. Inicializar sistema de romaneio
                 initializeRomaneioListeners();
                 loadRomaneioTemplates();
@@ -11502,3 +12102,5 @@ document.querySelector('[data-tab="saida-ferramentas"]')?.addEventListener('clic
     </script>
 </body>
 </html>
+
+
